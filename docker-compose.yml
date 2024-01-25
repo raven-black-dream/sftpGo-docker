@@ -1,0 +1,84 @@
+---
+version: "3.0"
+ 
+services:
+ 
+#-------------------------------------------------------------------------------
+ 
+    traefik:
+ 
+        image: traefik:v2.6
+        container_name: traefik
+ 
+        depends_on:
+            - "sftpgo"
+ 
+        # Public-facing ports
+        ports:
+            - "80:80/tcp"       # HTTP
+            - "443:443/tcp"     # HTTPS
+            - "2222:2222/tcp"   # SFTP
+ 
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro  # Listen to the Docker events
+            - ./traefik.toml:/traefik.toml:ro    # Static config.
+            - ./traefik.d:/etc/traefik:ro        # Dynamic config.
+            - ./logs:/logs                       # Diagnosis / Traffic
+            - ./users:/users:ro                  # Basic auth. users
+            - ./plugins:/plugins-local:ro        # Local plugins without Traefik Pilot
+            - ./letsencrypt:/letsencrypt:ro              # Offsite certs.
+            - ./certs/:/cacerts:ro                   # Certificate Authorities
+ 
+        restart: "always"
+ 
+#-------------------------------------------------------------------------------
+ 
+    sftpgo:
+ 
+        image: drakkan/sftpgo:v2-alpine
+        container_name: sftpgo
+ 
+        # Peer-facing ports
+        expose:
+            - "1111/tcp"
+            - "2222/tcp"
+            - "3333/tcp"
+            - "4444/tcp"
+ 
+        environment:
+ 
+            # Proxy Protocol
+            - "SFTPGO_COMMON__PROXY_PROTOCOL=2"
+            - "SFTPGO_COMMON__PROXY_ALLOWED=169.254.0.0/29"
+ 
+            # SFTP
+            - "SFTPGO_SFTPD__BINDINGS__0__PORT=1111"
+ 
+            # HTTP
+            - "SFTPGO_HTTPD__BINDINGS__0__PORT=2222"
+            - "SFTPGO_HTTPD__BINDINGS__0__PROXY_ALLOWED=169.254.0.0/29"
+ 
+            # Telemetry
+            - "SFTPGO_TELEMETRY__BIND_PORT=3333"
+            - "SFTPGO_TELEMETRY__BIND_ADDRESS=0.0.0.0"
+ 
+            # Uncomment if you want to profile SFTPGo, see https://github.com/drakkan/sftpgo/blob/main/docs/profiling.md
+            # - "SFTPGO_TELEMETRY__ENABLE_PROFILER=true"
+ 
+            # WebDAV
+            # - "SFTPGO_WEBDAVD__BINDINGS__0__PORT=4444"
+            # - "SFTPGO_WEBDAVD__BINDINGS__0__PROXY_ALLOWED=169.254.0.0/29"
+ 
+            # Defender (similar concept as Fail2ban) — see https://github.com/drakkan/sftpgo/blob/main/docs/defender.md
+            - "SFTPGO_COMMON__DEFENDER__ENABLED=true"
+            - "SFTPGO_COMMON__DEFENDER__BAN_TIME=30"
+            - "SFTPGO_COMMON__DEFENDER__BAN_TIME_INCREMENT=50"
+            - "SFTPGO_COMMON__DEFENDER__THRESHOLD=15"
+            - "SFTPGO_COMMON__DEFENDER__OBSERVATION_TIME=30"
+ 
+        volumes:
+            - ./home:/srv/sftpgo/data
+            - ./backups:/srv/sftpgo/backups
+            - ./config:/var/lib/sftpgo
+ 
+        restart: unless-stopped
